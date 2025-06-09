@@ -16,7 +16,7 @@
     "inspect": "npx fastmcp inspect src/index.ts"
   },
   "keywords": [],
-  "author": "",
+  "author": "leila",
   "license": "ISC",
   "description": "",
   "dependencies": {
