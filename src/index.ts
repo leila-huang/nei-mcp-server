@@ -1,6 +1,6 @@
 import { FastMCP } from "fastmcp";
 import { z } from "zod"; // Or any validation library that supports Standard Schema
-import { Nei } from "./nei";
+import { Nei } from "./nei.js";
 
 const server = new FastMCP({
   name: "nei-mcp-server",
