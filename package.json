@@ -1,0 +1,32 @@
+{
+  "name": "nei-mcp-server",
+  "version": "0.0.1",
+  "main": "index.js",
+  "type": "module",
+  "bin": {
+    "nei": "./build/index.js"
+  },
+  "files": [
+    "build"
+  ],
+  "scripts": {
+    "build": "tsc && chmod 755 build/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node build/index.js",
+    "inspect": "npx fastmcp inspect src/index.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "fastmcp": "^3.0.0",
+    "lodash-es": "^4.17.21",
+    "zod": "^3.25.56"
+  },
+  "devDependencies": {
+    "@types/lodash-es": "^4.17.12",
+    "@types/node": "^22.15.30",
+    "typescript": "^5.8.3"
+  }
+}
