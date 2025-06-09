@@ -81,7 +81,7 @@
                 "command": "npx",
                 "args": [
                     "tsx",
-                    "@"
+                    "@leila/nei-mcp-server"
                 ],
                 "env": {
                     "SERVER_URL": "xxx",

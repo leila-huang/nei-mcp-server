@@ -1,24 +1,28 @@
 {
-  "name": "nei-mcp-server",
+  "name": "@leila/nei-mcp-server",
   "version": "0.0.1",
   "main": "index.js",
   "type": "module",
   "bin": {
-    "nei": "./build/index.js"
+    "nei-mcp-server": "./build/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/leila-huang/nei-mcp-server.git"
   },
   "files": [
-    "build"
+    "build",
+    "README.md"
   ],
   "scripts": {
-    "build": "tsc && chmod 755 build/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node build/index.js",
+    "build": "tsc",
     "inspect": "npx fastmcp inspect src/index.ts"
   },
   "keywords": [],
   "author": "leila",
   "license": "ISC",
-  "description": "",
+  "description": "nei mcp server",
   "dependencies": {
     "fastmcp": "^3.0.0",
     "lodash-es": "^4.17.21",
