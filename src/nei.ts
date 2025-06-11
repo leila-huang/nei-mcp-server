@@ -1,13 +1,6 @@
 import { intersectionBy, omitBy } from "lodash-es";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 
-interface NeiParametersType {
-  /* NEI服务域名 */
-  server: string;
-  /* 项目key */
-  key: string;
-}
-
 /* 基础类型 */
 enum BaseTypeEnum {
   String = "string",
