@@ -27,7 +27,7 @@
 1.  **克隆项目**
 
     ```bash
-    git clone <your-repository-url>
+    git clone https://github.com/leila-huang/nei-mcp-server.git
     cd nei-mcp-server
     ```
 
