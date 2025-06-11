@@ -4,7 +4,7 @@ import { Nei } from "./nei.js";
 
 const server = new FastMCP({
   name: "nei-mcp-server",
-  version: "0.0.1",
+  version: "0.0.3",
 });
 
 // 获取全部的nei后端接口的资源列表

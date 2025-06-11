@@ -1,7 +1,7 @@
 {
   "name": "@leila329/nei-mcp-server",
-  "version": "0.0.2",
-  "main": "index.js",
+  "version": "0.0.3",
+  "main": "build/index.js",
   "type": "module",
   "bin": {
     "nei-mcp-server": "build/index.js"
