@@ -80,7 +80,7 @@
             "nei-mcp-server": {
                 "command": "npx",
                 "args": [
-                    "tsx",
+                    "-y",
                     "@leila329/nei-mcp-server"
                 ],
                 "env": {
