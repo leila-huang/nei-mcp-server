@@ -1,18 +1,42 @@
-import { intersectionBy, omitBy } from "lodash-es";
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { ProjectResource } from "./data.js";
+import { map, pick, keyBy, omit, groupBy } from "lodash-es";
 
-/* 基础类型 */
-enum BaseTypeEnum {
-  String = "string",
-  Int = "int",
-  Number = "number",
-  Long = "long",
-  Boolean = "boolean",
-  Guid = "guid",
-}
+type NeiInterface = ProjectResource["interfaces"][number];
+type NeiGroup = ProjectResource["groups"][number];
+type NeiDatatype = ProjectResource["datatypes"][number];
+type NeiParameter = NeiInterface["params"]["inputs"][number];
+
+// 1. 使用 Pick 和交叉类型重构类型定义
+type RefactoredDatatype = Pick<NeiDatatype, "id" | "name" | "params">;
+
+type RefactoredParameter = Pick<NeiParameter, "name" | "description"> & {
+  isArray: boolean;
+  type?: RefactoredDatatype;
+};
+
+type RefactoredInterface = Pick<
+  NeiInterface,
+  "id" | "name" | "path" | "method" | "groupId"
+> & {
+  respo: Pick<NeiInterface["respo"], "id" | "realname">;
+  creator: Pick<NeiInterface["creator"], "id" | "realname">;
+  inputs: RefactoredParameter[];
+  outputs: RefactoredParameter[];
+};
+
+type RefactoredGroup = Pick<NeiGroup, "id" | "name" | "description">;
+
+// 2. 为重构后的完整数据结构定义类型
+type RefactoredProjectResource = Omit<
+  ProjectResource,
+  "interfaces" | "groups"
+> & {
+  interfaces: RefactoredInterface[];
+  groups: RefactoredGroup[];
+};
 
 // 空值清理工具函数
-const removeEmptyValues = (obj: any): any => {
+const removeEmptyValues = <T>(obj: T): T => {
   if (obj === null || obj === undefined) {
     return obj;
   }
@@ -20,12 +44,14 @@ const removeEmptyValues = (obj: any): any => {
   if (Array.isArray(obj)) {
     return obj
       .map(removeEmptyValues)
-      .filter((item) => item !== null && item !== undefined && item !== "");
+      .filter(
+        (item) => item !== null && item !== undefined && item !== ""
+      ) as unknown as T;
   }
 
   if (typeof obj === "object") {
-    const cleaned: any = {};
-    for (const [key, value] of Object.entries(obj)) {
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(obj as Record<string, any>)) {
       const cleanedValue = removeEmptyValues(value);
       // 保留数字0和布尔值false，移除null、undefined、空字符串
       if (
@@ -36,79 +62,32 @@ const removeEmptyValues = (obj: any): any => {
         cleaned[key] = cleanedValue;
       }
     }
-    return cleaned;
+    return cleaned as unknown as T;
   }
 
   return obj;
 };
 
-// 安全字段访问工具函数
-const safeGet = <T = any>(
-  obj: any,
-  path: string,
-  defaultValue: T | null = null
-): T | null => {
-  if (!obj || typeof obj !== "object") {
-    return defaultValue;
-  }
-
-  const keys = path.split(".");
-  let current = obj;
-
-  for (const key of keys) {
-    if (current === null || current === undefined || !(key in current)) {
-      return defaultValue;
-    }
-    current = current[key];
-  }
-
-  return current !== null && current !== undefined ? current : defaultValue;
-};
-
-// 安全字符串处理函数
-const safeStringOperation = (
-  str: any,
-  operation: (s: string) => string
-): string => {
-  if (typeof str !== "string" || !str) {
-    return "";
-  }
-  return operation(str);
-};
-
-// 表格数据格式化需要忽略处理的字段
-const TableIgnoreFields = [
-  "pagesize",
-  "order",
-  "orderasc",
-  "pageindex",
-  "total",
-  "pageindex",
-  "pagesize",
-];
-// nei配置备份路径
-const NeiDBFilePath = "nei.json";
-
-// nei字段值类型 与 ProTable 列valueType 的映射
-const ValueTypeOfTypeMap: Record<string, string> = {
-  [BaseTypeEnum.String]: "text",
-  [BaseTypeEnum.Int]: "digit",
-  [BaseTypeEnum.Number]: "digit",
-  [BaseTypeEnum.Long]: "digit",
-  [BaseTypeEnum.Boolean]: "text",
-};
-
-const dbs = new Map<string, Record<string, any>>();
+// 3. 更新 dbs Map 的类型
+const dbs = new Map<string, RefactoredProjectResource>();
 
 export class Nei {
-  private server = process.env.SERVER_URL;
-  private db?: Record<string, any>;
+  private server: string;
+  // 4. 更新 db 属性的类型
+  private db?: RefactoredProjectResource;
+  private interfacesByGroup = new Map<number, RefactoredInterface[]>();
   private static instance: Nei;
 
   private constructor(private key: string) {
     if (!this.key) {
       throw new Error("key is required");
     }
+
+    const serverUrl = process.env.SERVER_URL;
+    if (!serverUrl) {
+      throw new Error("SERVER_URL is not defined in environment variables.");
+    }
+    this.server = serverUrl;
   }
 
   static async getInstance() {
@@ -130,341 +109,189 @@ export class Nei {
     let projectData = dbs.get(this.key);
     if (projectData) {
       this.db = projectData;
+      this._groupInterfaces();
       return;
     }
 
-    // 2. 其次读取文件缓存
-    try {
-      if (existsSync(NeiDBFilePath)) {
-        const fileContent = readFileSync(NeiDBFilePath, "utf-8");
-        const allProjectsData = JSON.parse(fileContent || "{}");
-        if (allProjectsData[this.key]) {
-          console.log(
-            `[${new Date().toISOString()}] 从本地文件加载项目数据成功！`
-          );
-          projectData = allProjectsData[this.key];
-          if (projectData) {
-            dbs.set(this.key, projectData); // 更新内存缓存
-            this.db = projectData;
-            return;
-          }
-        }
-      }
-    } catch (error) {
-      console.error(
-        `[${new Date().toISOString()}] 加载本地缓存文件失败:`,
-        error
-      );
-    }
-
-    // 3. 如果缓存没有，则从网络同步
+    // 2. 如果缓存没有，则从网络同步
     projectData = await this.syncData();
     if (projectData) {
       console.log(`[${new Date().toISOString()}] 项目数据网络同步成功！`);
     }
 
     this.db = projectData;
+    this._groupInterfaces();
   }
 
-  async syncData() {
+  async syncData(): Promise<RefactoredProjectResource | undefined> {
     const key = this.key;
     console.log(
       `[${new Date().toISOString()}] 项目数据同步开始！`,
       `${this.server}/api/projectres/?key=${key}`
     );
+
     const result = await fetch(`${this.server}/api/projectres/?key=${key}`);
-    const data = JSON.parse((await result.text()) ?? "{}");
+
+    if (!result.ok) {
+      throw new Error(
+        `获取 NEI 数据失败: ${result.status} ${result.statusText}`
+      );
+    }
+
+    const text = await result.text();
+    const data = JSON.parse(text || "{}");
 
     // 移除空值字段并设置项目数据
     const rawProjectData = data?.result ?? {};
-    const projectData = removeEmptyValues(rawProjectData);
-    dbs.set(key, projectData);
+    const projectData = removeEmptyValues<ProjectResource>(
+      rawProjectData as ProjectResource
+    );
 
-    // 更新文件缓存
-    try {
-      let allProjectsData: Record<string, any> = {};
-      if (existsSync(NeiDBFilePath)) {
-        const fileContent = readFileSync(NeiDBFilePath, "utf-8");
-        allProjectsData = JSON.parse(fileContent || "{}");
-      }
-      allProjectsData[key] = projectData;
-      writeFileSync(NeiDBFilePath, JSON.stringify(allProjectsData, null, 2));
-      console.log(
-        `[${new Date().toISOString()}] 项目数据已缓存到本地文件 ${NeiDBFilePath}`
-      );
-    } catch (error) {
-      console.error(
-        `[${new Date().toISOString()}] 写入本地缓存文件失败:`,
-        error
-      );
-    }
+    // 重构数据结构
+    const refactoredData: RefactoredProjectResource = {
+      ...projectData,
+      interfaces: this._refactorInterfaces(projectData),
+      groups: this._refactorGroups(projectData),
+    };
 
-    return projectData;
+    dbs.set(key, refactoredData);
+    this.db = refactoredData;
+    this._groupInterfaces();
+
+    return refactoredData;
   }
 
-  getInterfaces() {
+  private _groupInterfaces() {
+    this.interfacesByGroup.clear();
+    if (!this.db?.interfaces) {
+      return;
+    }
+    const grouped = groupBy(this.db.interfaces, "groupId");
+    for (const groupId in grouped) {
+      this.interfacesByGroup.set(Number(groupId), grouped[groupId]);
+    }
+  }
+
+  private _refactorGroups(projectData: ProjectResource): RefactoredGroup[] {
+    return map(projectData.groups, (group) =>
+      pick(group, ["id", "name", "description"])
+    );
+  }
+
+  private _refactorInterfaces(
+    projectData: ProjectResource
+  ): RefactoredInterface[] {
+    const datatypesMap = keyBy(projectData.datatypes, "id");
+    // RefactoredDatatype |
+    const getDatatypeInfo = (
+      param: Pick<NeiParameter, "type" | "datatypeId">
+    ): RefactoredDatatype | undefined => {
+      const datatype = param.type ? datatypesMap[param.type] : undefined;
+      // 跳过NEI内置的系统类型（如String, Number等），因为它们没有具体的参数结构，对客户端意义不大。
+      if (datatype?.tag === "系统类型") return;
+
+      // 当数据模型（如枚举）的参数列表大于1时，我们才关心其具体的参数定义。
+      // 如果只有一个参数，通常意味着它是一个简单的类型别名，我们不需要展开。
+      const params =
+        (datatype?.params ?? []).length > 1
+          ? map(datatype?.params, (item) =>
+              pick(item, ["id", "name", "defaultValue", "typeName"])
+            )
+          : undefined;
+
+      return {
+        ...pick(datatype, ["id", "name"]),
+        params,
+      };
+    };
+
+    const processParam = (param: NeiParameter): RefactoredParameter => {
+      const neiParam: RefactoredParameter = {
+        ...pick(param, ["name", "description"]),
+        isArray: param.isArray === 1,
+      };
+      // 调用一次并缓存结果
+      const typeInfo = getDatatypeInfo(param);
+      if (typeInfo) {
+        neiParam["type"] = typeInfo;
+      }
+      return neiParam;
+    };
+
+    return map(projectData.interfaces, (itf) => {
+      return {
+        ...pick(itf, ["id", "name", "path", "method", "groupId"]),
+        respo: pick(itf.respo, ["id", "realname"]),
+        creator: pick(itf.creator, ["id", "realname"]),
+        inputs: map(itf.params.inputs, processParam),
+        outputs: map(itf.params.outputs, processParam),
+      };
+    });
+  }
+
+  getDatatypes(): NeiDatatype[] {
+    return this.db?.datatypes ?? [];
+  }
+
+  getInterfaces(): RefactoredInterface[] {
     return this.db?.interfaces ?? [];
   }
 
-  getInterfaceByUri(uri: string) {
+  /**
+   * 根据URI搜索接口
+   * @param uri 接口URI（模糊匹配）
+   * @returns 筛选后的接口列表
+   */
+  getInterfacesByUri(uri: string): RefactoredInterface[] {
     if (!uri) {
-      return;
+      return [];
     }
     // 支持模糊匹配url地址
-    return this.getInterfaces().find((item: any) =>
+    return this.getInterfaces().filter((item) =>
       item.path?.toLowerCase().includes(uri.toLowerCase())
     );
   }
 
   /**
-   * 根据条件搜索接口
+   * 根据接口名称搜索接口
    * @param name 接口名称（模糊匹配）
-   * @param respo 负责人姓名（模糊匹配）
-   * @param groupName 分组名称（模糊匹配）
-   * @returns 筛选后的接口列表，包含groupName和respoName字段
+   * @returns 筛选后的接口列表
    */
-  searchInterfaces({
-    name,
-    respo,
-    groupName,
-  }: {
-    name?: string;
-    respo?: string;
-    groupName?: string;
-  }) {
-    const interfaces = this.getInterfaces();
-    const groups = this.getGroups();
-    const developers = this.getDevelopers();
-
-    if (!interfaces || interfaces.length === 0) {
+  getInterfacesByName(name: string): RefactoredInterface[] {
+    if (!name) {
       return [];
     }
-
-    let filteredInterfaces = [...interfaces];
-
-    // 按接口名称筛选（模糊匹配）
-    if (name) {
-      filteredInterfaces = filteredInterfaces.filter((item: any) =>
-        item.name?.toLowerCase().includes(name.toLowerCase())
-      );
-    }
-
-    // 按负责人筛选（模糊匹配）
-    if (respo) {
-      const matchingDevs = developers.filter((dev: any) =>
-        dev.realname?.toLowerCase().includes(respo.toLowerCase())
-      );
-      const matchingDevIds = new Set(matchingDevs.map((dev: any) => dev.id));
-      if (matchingDevIds.size > 0) {
-        filteredInterfaces = filteredInterfaces.filter((item: any) =>
-          matchingDevIds.has(item.respoId)
-        );
-      } else {
-        return [];
-      }
-    }
-
-    // 按分组名称筛选（模糊匹配）
-    if (groupName) {
-      const matchingGroups = groups.filter((group: any) =>
-        group.name?.toLowerCase().includes(groupName.toLowerCase())
-      );
-      const matchingGroupIds = new Set(
-        matchingGroups.map((group: any) => group.id)
-      );
-      if (matchingGroupIds.size > 0) {
-        filteredInterfaces = filteredInterfaces.filter((item: any) =>
-          matchingGroupIds.has(item.groupId)
-        );
-      } else {
-        return [];
-      }
-    }
-
-    // 为结果附加分组名和负责人姓名
-    const groupMap = new Map(groups.map((g: any) => [g.id, g.name]));
-    const devMap = new Map(developers.map((d: any) => [d.id, d.realname]));
-
-    return filteredInterfaces.map((itf: any) => ({
-      ...itf,
-      groupName: groupMap.get(itf.groupId) ?? "未知分组",
-      respoName: devMap.get(itf.respoId) ?? "未知负责人",
-    }));
+    return this.getInterfaces().filter((item) =>
+      item.name?.toLowerCase().includes(name.toLowerCase())
+    );
   }
 
-  getGroups() {
+  getGroups(): RefactoredGroup[] {
     return this.db?.groups ?? [];
   }
 
-  getDevelopers() {
-    return this.db?.developers ?? [];
-  }
-
-  getDataTypes() {
-    return this.db?.datatypes ?? [];
-  }
-
   /**
-   * 根据ID查询数据类型
-   * @param id 类型id
-   * @returns 数据类型详情
+   * 根据分组名称搜索分组，并附带分组下的接口列表
+   * @param name 分组名称（模糊匹配）
+   * @returns 筛选后的分组列表，包含接口详情
    */
-  getDataTypeById(id: number) {
-    if (!id) {
-      return;
-    }
-
-    return this.getDataTypes().find((item: any) => item.id === id);
-  }
-
-  /**
-   * 根据名称获取数据类型
-   * @param name 类型名称
-   * @returns 数据类型详情
-   */
-  getDataTypeByName(name: string) {
-    if (!name) {
-      return;
-    }
-
-    return this.getDataTypes().find((item: any) => item.name === name);
-  }
-
-  private handleSearchFields(fieldsSettings: Record<string, any>[]) {
-    if (
-      !fieldsSettings ||
-      !Array.isArray(fieldsSettings) ||
-      fieldsSettings.length <= 0
-    ) {
+  getGroupsByName(
+    name?: string
+  ): (RefactoredGroup & { interfaces: RefactoredInterface[] })[] {
+    if (!name || !this?.db?.groups) {
       return [];
     }
-
-    return fieldsSettings
-      .filter((item) => {
-        const typeName = safeGet(item, "typeName", "");
-        return (
-          typeName &&
-          Object.values(BaseTypeEnum).includes(
-            safeStringOperation(typeName, (s) =>
-              s.toLowerCase()
-            ) as BaseTypeEnum
-          )
-        );
-      })
-      .map((item) => {
-        const name = safeGet(item, "name", "");
-        const typeName = safeGet(item, "typeName", "");
-        const description = safeGet(item, "description", "") as string;
-
-        return {
-          dataIndex: name,
-          valueType: ValueTypeOfTypeMap[typeName as string] ?? "text",
-          originalType: typeName,
-          // 描述大于10个字符，应该不是字段名称
-          title:
-            typeof description === "string" &&
-            description &&
-            description.length < 10
-              ? description
-              : name,
-        };
-      })
-      .filter((item) => item.dataIndex); // 移除没有dataIndex的项
-  }
-
-  private handleTableFieldsByTypeName(typeNameId: number) {
-    if (!typeNameId) {
-      return;
-    }
-
-    const listDataTypeInfo = this.getDataTypeById(typeNameId);
-    const list = listDataTypeInfo?.params ?? [];
-
-    if (list.length <= 0) {
-      return;
-    }
-
-    return list.map((item: Record<string, any>) => {
-      const itemSettings = {
-        dataIndex: item.name,
-        valueType: ValueTypeOfTypeMap[item?.typeName as string] ?? "text",
-        originalType: item?.typeName,
-        // 描述大于10个字符，应该不是字段名称
-        title:
-          item.description && item.description.length < 10
-            ? item.description
-            : item.name,
-      };
-
-      return itemSettings;
-    });
-  }
-
-  getParamsInterfaceOfTable(uri: string) {
-    const interfaceInfo = this.getInterfaceByUri(uri);
-    if (!interfaceInfo) {
-      return;
-    }
-
-    const { inputs = [], outputs = [] } = interfaceInfo?.params ?? {};
-    const filtedInputs = inputs.filter(
-      (item: any) => !TableIgnoreFields.includes(item.name.toLowerCase())
+    const filteredGroups = this.getGroups().filter((item) =>
+      item.name?.toLowerCase().includes(name.toLowerCase())
     );
 
-    // 过滤类型为数组的字段
-    const outputListFields = outputs.filter((item: any) => item.isArray === 1);
-    // 优先取字段名为list 或 data 的字段，如果没找到取第一个
-    const outputList =
-      outputListFields.find((item: any) =>
-        ["list", "data"].includes(item.name.toLowerCase())
-      ) ?? outputListFields[0];
-
-    // 搜索表单字段
-    let serachFields = this.handleSearchFields(filtedInputs) ?? [];
-    // 表格列
-    let tableFields = this.handleTableFieldsByTypeName(outputList?.type) ?? [];
-    // 相同字段，
-    const sameFields = intersectionBy(tableFields, serachFields, "dataIndex");
-    const dataIndexOfSameFields = sameFields.map((item: any) => item.dataIndex);
-    let allFields: Record<string, any> = [...sameFields];
-
-    serachFields.forEach((item) => {
-      if (!dataIndexOfSameFields.includes(item.dataIndex)) {
-        allFields.push({
-          ...item,
-          hideInTable: true,
-        });
-      }
+    return map(filteredGroups, (group) => {
+      // O(1) 查找
+      const groupInterfaces = this.interfacesByGroup.get(group.id) ?? [];
+      return {
+        ...group,
+        interfaces: groupInterfaces,
+      };
     });
-
-    tableFields.forEach((item: any) => {
-      if (!dataIndexOfSameFields.includes(item.dataIndex)) {
-        allFields.push({
-          ...item,
-          hideInSearch: true,
-        });
-      }
-    });
-
-    allFields = allFields.map((item: any) => {
-      // 字段名带Enum字符的字段，作为枚举特殊处理
-      if (item?.originalType?.indexOf("Enum") >= 0) {
-        const subDataType = this.getDataTypeByName(item?.originalType);
-        if (subDataType?.params?.length > 0) {
-          const enumMap: Record<string, string> = {};
-          item["valueType"] = "select";
-          subDataType.params.forEach((param: Record<string, any>) => {
-            enumMap[param.name] = param.description;
-          });
-          item["valueEnum"] = enumMap;
-        }
-      }
-
-      delete item.originalType;
-
-      return item;
-    });
-
-    return allFields;
   }
 }
