@@ -8,7 +8,7 @@ type NeiParameter = NeiInterface["params"]["inputs"][number];
 
 // 1. 使用 Pick 和交叉类型重构类型定义
 type RefactoredDatatype = Pick<NeiDatatype, "id" | "name"> & {
-  params?: Partial<NeiDatatype["params"][number]>[];
+  params?: RefactoredParameter[];
 };
 
 type RefactoredParameter = Pick<NeiParameter, "name" | "description"> & {
@@ -178,30 +178,27 @@ export class Nei {
   ): RefactoredInterface[] {
     const datatypesMap = keyBy(projectData.datatypes, "id");
 
-    const getDatatypeInfo = (
+    function getDatatypeInfo(
       param: Pick<NeiParameter, "type" | "datatypeId">
-    ): RefactoredDatatype | undefined => {
+    ): RefactoredDatatype | undefined {
       const datatype = param.type ? datatypesMap[param.type] : undefined;
       if (!datatype) return;
       // 跳过NEI内置的系统类型（如String, Number等），因为它们没有具体的参数结构，对客户端意义不大。
       if (datatype?.tag === "系统类型") return;
 
-      // 当数据模型（如枚举）的参数列表大于1时，我们才关心其具体的参数定义。
-      // 如果只有一个参数，通常意味着它是一个简单的类型别名，我们不需要展开。
+      // 递归处理嵌套参数
       const params =
-        (datatype?.params ?? []).length > 1
-          ? map(datatype?.params, (item) =>
-              pick(item, ["id", "name", "defaultValue", "typeName"])
-            )
+        (datatype?.params ?? []).length > 0
+          ? map(datatype.params, (p) => processParam(p as NeiParameter))
           : undefined;
 
-      return {
+      return removeEmptyValues({
         ...pick(datatype, ["id", "name"]),
         params,
-      };
-    };
+      });
+    }
 
-    const processParam = (param: NeiParameter): RefactoredParameter => {
+    function processParam(param: NeiParameter): RefactoredParameter {
       const neiParam: RefactoredParameter = {
         ...pick(param, ["name", "description"]),
         isArray: param.isArray === 1,
@@ -212,7 +209,7 @@ export class Nei {
         neiParam["type"] = typeInfo;
       }
       return neiParam;
-    };
+    }
 
     return map(projectData.interfaces, (itf) => {
       const url = new URL(`${this.server}/interface/detail/`);
