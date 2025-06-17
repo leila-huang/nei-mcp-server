@@ -14,6 +14,8 @@ type RefactoredDatatype = Pick<NeiDatatype, "id" | "name"> & {
 type RefactoredParameter = Pick<NeiParameter, "name" | "description"> & {
   isArray: boolean;
   type?: RefactoredDatatype;
+  // 接口平台的详情地址
+  url?: string;
 };
 
 type RefactoredInterface = Pick<
@@ -213,12 +215,17 @@ export class Nei {
     };
 
     return map(projectData.interfaces, (itf) => {
+      const url = new URL(`${this.server}/interface/detail/`);
+      url.searchParams.set("pid", itf.projectId.toString());
+      url.searchParams.set("id", itf.id.toString());
       return {
         ...pick(itf, ["id", "name", "path", "method", "groupId"]),
         respo: pick(itf.respo, ["id", "realname"]),
         creator: pick(itf.creator, ["id", "realname"]),
         inputs: map(itf.params.inputs, processParam),
         outputs: map(itf.params.outputs, processParam),
+        // 增加一个url的详情地址 http://x.x.x/interface/detail/?pid=xxx&id=xxx ,不用字段拼接，用对象构造参数
+        url: url.toString(),
       };
     });
   }
