@@ -7,7 +7,9 @@ type NeiDatatype = ProjectResource["datatypes"][number];
 type NeiParameter = NeiInterface["params"]["inputs"][number];
 
 // 1. 使用 Pick 和交叉类型重构类型定义
-type RefactoredDatatype = Pick<NeiDatatype, "id" | "name" | "params">;
+type RefactoredDatatype = Pick<NeiDatatype, "id" | "name"> & {
+  params?: Partial<NeiDatatype["params"][number]>[];
+};
 
 type RefactoredParameter = Pick<NeiParameter, "name" | "description"> & {
   isArray: boolean;
@@ -33,6 +35,7 @@ type RefactoredProjectResource = Omit<
 > & {
   interfaces: RefactoredInterface[];
   groups: RefactoredGroup[];
+  interfacesByGroup: Record<number, RefactoredInterface[]>;
 };
 
 // 空值清理工具函数
@@ -75,7 +78,6 @@ export class Nei {
   private server: string;
   // 4. 更新 db 属性的类型
   private db?: RefactoredProjectResource;
-  private interfacesByGroup = new Map<number, RefactoredInterface[]>();
   private static instance: Nei;
 
   private constructor(private key: string) {
@@ -109,7 +111,6 @@ export class Nei {
     let projectData = dbs.get(this.key);
     if (projectData) {
       this.db = projectData;
-      this._groupInterfaces();
       return;
     }
 
@@ -120,7 +121,6 @@ export class Nei {
     }
 
     this.db = projectData;
-    this._groupInterfaces();
   }
 
   async syncData(): Promise<RefactoredProjectResource | undefined> {
@@ -147,29 +147,22 @@ export class Nei {
       rawProjectData as ProjectResource
     );
 
+    const interfaces = this._refactorInterfaces(projectData);
+    const groups = this._refactorGroups(projectData);
+    const interfacesByGroup = groupBy(interfaces, "groupId");
+
     // 重构数据结构
     const refactoredData: RefactoredProjectResource = {
-      ...projectData,
-      interfaces: this._refactorInterfaces(projectData),
-      groups: this._refactorGroups(projectData),
+      ...omit(projectData, "interfaces", "groups"),
+      interfaces,
+      groups,
+      interfacesByGroup,
     };
 
     dbs.set(key, refactoredData);
     this.db = refactoredData;
-    this._groupInterfaces();
 
     return refactoredData;
-  }
-
-  private _groupInterfaces() {
-    this.interfacesByGroup.clear();
-    if (!this.db?.interfaces) {
-      return;
-    }
-    const grouped = groupBy(this.db.interfaces, "groupId");
-    for (const groupId in grouped) {
-      this.interfacesByGroup.set(Number(groupId), grouped[groupId]);
-    }
   }
 
   private _refactorGroups(projectData: ProjectResource): RefactoredGroup[] {
@@ -182,11 +175,12 @@ export class Nei {
     projectData: ProjectResource
   ): RefactoredInterface[] {
     const datatypesMap = keyBy(projectData.datatypes, "id");
-    // RefactoredDatatype |
+
     const getDatatypeInfo = (
       param: Pick<NeiParameter, "type" | "datatypeId">
     ): RefactoredDatatype | undefined => {
       const datatype = param.type ? datatypesMap[param.type] : undefined;
+      if (!datatype) return;
       // 跳过NEI内置的系统类型（如String, Number等），因为它们没有具体的参数结构，对客户端意义不大。
       if (datatype?.tag === "系统类型") return;
 
@@ -287,7 +281,7 @@ export class Nei {
 
     return map(filteredGroups, (group) => {
       // O(1) 查找
-      const groupInterfaces = this.interfacesByGroup.get(group.id) ?? [];
+      const groupInterfaces = this.db?.interfacesByGroup?.[group.id] ?? [];
       return {
         ...group,
         interfaces: groupInterfaces,

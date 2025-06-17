@@ -93,12 +93,12 @@ interface Parameter {
   /**
    * @property {string} name - 参数名称
    */
-  name: string;
+  name?: string;
 
   /**
    * @property {number | string} type - 参数的类型。可以是数字（系统内置类型）或字符串（自定义数据类型名称）。
    */
-  type: number | string;
+  type?: number | string;
 
   /**
    * @property {number} [datatypeId] - 如果是自定义类型，这里是对应数据类型的ID
@@ -214,7 +214,7 @@ interface Datatype {
   /**
    * @property {Parameter[]} params - 该数据类型包含的参数列表
    */
-  params?: Parameter[];
+  params: Parameter[];
 
   /**
    * @property {any[]} watchList - 关注者列表 (在此数据中为空)
