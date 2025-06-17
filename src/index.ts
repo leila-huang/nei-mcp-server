@@ -31,7 +31,7 @@ const main = async () => {
   server.addTool({
     name: "search_interfaces_by_uri",
     description:
-      "根据URI（接口路径）搜索NEI项目中的接口资源。支持模糊匹配，输入URI的部分内容即可找到包含该内容的所有接口。当你需要查找特定路径的接口时使用此工具。如果搜索结果为空，建议先调用 `sync_nei_project` 工具同步最新数据后再试。",
+      "通过接口的URI（访问路径）在NEI项目中进行模糊搜索。当你需要查找的接口时优先使用此工具，接口的参数常见为URI、英文。如果搜索结果为空，建议先调用 `sync_nei_project` 工具同步最新数据后再试。",
     parameters: z.object({
       uri: z.string().describe("接口URI，支持模糊匹配"),
     }),
@@ -50,7 +50,7 @@ const main = async () => {
   server.addTool({
     name: "search_interfaces_by_name",
     description:
-      "根据接口名称搜索NEI项目中的接口资源。支持模糊匹配，输入接口名称的部分内容即可找到包含该内容的所有接口。当你知道接口的大致名称但不确定具体URI时使用此工具。如果搜索结果为空，建议先调用 `sync_nei_project` 工具同步最新数据后再试。",
+      "通过接口的业务名称在NEI项目中进行模糊搜索。当你知道接口的功能描述或业务名称（通常是中文）时，应优先使用此工具。如果搜索结果为空，建议先调用 `sync_nei_project` 工具同步最新数据后再试。",
     parameters: z.object({
       name: z.string().describe("接口名称，支持模糊匹配"),
     }),
