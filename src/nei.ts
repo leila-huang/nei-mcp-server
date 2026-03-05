@@ -76,6 +76,11 @@ const removeEmptyValues = <T>(obj: T): T => {
 // 3. 更新 dbs Map 的类型
 const dbs = new Map<string, RefactoredProjectResource>();
 
+// stdio 传输模式下，业务日志必须写入 stderr，避免污染 MCP 协议输出流。
+const logInfo = (...args: unknown[]) => {
+  console.error(...args);
+};
+
 export class Nei {
   private server: string;
   // 4. 更新 db 属性的类型
@@ -119,7 +124,7 @@ export class Nei {
     // 2. 如果缓存没有，则从网络同步
     projectData = await this.syncData();
     if (projectData) {
-      console.log(`[${new Date().toISOString()}] 项目数据网络同步成功！`);
+      logInfo(`[${new Date().toISOString()}] 项目数据网络同步成功！`);
     }
 
     this.db = projectData;
@@ -127,7 +132,7 @@ export class Nei {
 
   async syncData(): Promise<RefactoredProjectResource | undefined> {
     const key = this.key;
-    console.log(
+    logInfo(
       `[${new Date().toISOString()}] 项目数据同步开始！`,
       `${this.server}/api/projectres/?key=${key}`
     );
@@ -141,7 +146,17 @@ export class Nei {
     }
 
     const text = await result.text();
-    const data = JSON.parse(text || "{}");
+    let data: any = {};
+    try {
+      data = JSON.parse(text || "{}");
+    } catch (error: any) {
+      const preview = (text || "").slice(0, 200).replace(/\s+/g, " ").trim();
+      throw new Error(
+        `解析 NEI 响应失败: ${error.message}; status=${result.status}; content-type=${result.headers.get(
+          "content-type"
+        )}; body_preview=${preview}`
+      );
+    }
 
     // 移除空值字段并设置项目数据
     const rawProjectData = data?.result ?? {};
