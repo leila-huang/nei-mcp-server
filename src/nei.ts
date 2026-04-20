@@ -1,46 +1,16 @@
-import { ProjectResource } from "./data.js";
+import { parseInterfaceDetailUrl } from "./nei-url.js";
 import { map, pick, keyBy, omit, groupBy } from "lodash-es";
+import type { ProjectResource } from "./data.js";
+import type {
+  NeiDatatype,
+  NeiParameter,
+  RefactoredDatatype,
+  RefactoredGroup,
+  RefactoredInterface,
+  RefactoredParameter,
+  RefactoredProjectResource,
+} from "./nei-types.js";
 
-type NeiInterface = ProjectResource["interfaces"][number];
-type NeiGroup = ProjectResource["groups"][number];
-type NeiDatatype = ProjectResource["datatypes"][number];
-type NeiParameter = NeiInterface["params"]["inputs"][number];
-
-// 1. 使用 Pick 和交叉类型重构类型定义
-type RefactoredDatatype = Pick<NeiDatatype, "id" | "name"> & {
-  params?: RefactoredParameter[];
-};
-
-type RefactoredParameter = Pick<NeiParameter, "name" | "description"> & {
-  isArray: boolean;
-  type?: RefactoredDatatype;
-  // 接口平台的详情地址
-  url?: string;
-};
-
-type RefactoredInterface = Pick<
-  NeiInterface,
-  "id" | "name" | "path" | "method" | "groupId"
-> & {
-  respo: Pick<NeiInterface["respo"], "id" | "realname">;
-  creator: Pick<NeiInterface["creator"], "id" | "realname">;
-  inputs: RefactoredParameter[];
-  outputs: RefactoredParameter[];
-};
-
-type RefactoredGroup = Pick<NeiGroup, "id" | "name" | "description">;
-
-// 2. 为重构后的完整数据结构定义类型
-type RefactoredProjectResource = Omit<
-  ProjectResource,
-  "interfaces" | "groups"
-> & {
-  interfaces: RefactoredInterface[];
-  groups: RefactoredGroup[];
-  interfacesByGroup: Record<number, RefactoredInterface[]>;
-};
-
-// 空值清理工具函数
 const removeEmptyValues = <T>(obj: T): T => {
   if (obj === null || obj === undefined) {
     return obj;
@@ -73,7 +43,6 @@ const removeEmptyValues = <T>(obj: T): T => {
   return obj;
 };
 
-// 3. 更新 dbs Map 的类型
 const dbs = new Map<string, RefactoredProjectResource>();
 
 // stdio 传输模式下，业务日志必须写入 stderr，避免污染 MCP 协议输出流。
@@ -83,7 +52,6 @@ const logInfo = (...args: unknown[]) => {
 
 export class Nei {
   private server: string;
-  // 4. 更新 db 属性的类型
   private db?: RefactoredProjectResource;
   private static instance: Nei;
 
@@ -231,7 +199,7 @@ export class Nei {
       url.searchParams.set("pid", itf.projectId.toString());
       url.searchParams.set("id", itf.id.toString());
       return {
-        ...pick(itf, ["id", "name", "path", "method", "groupId"]),
+        ...pick(itf, ["id", "name", "path", "method", "groupId", "projectId"]),
         respo: pick(itf.respo, ["id", "realname"]),
         creator: pick(itf.creator, ["id", "realname"]),
         inputs: map(itf.params.inputs, processParam),
@@ -256,12 +224,32 @@ export class Nei {
    * @returns 筛选后的接口列表
    */
   getInterfacesByUri(uri: string): RefactoredInterface[] {
-    if (!uri) {
+    const query = uri?.trim();
+    if (!query) {
       return [];
     }
-    // 支持模糊匹配url地址
+
+    const normalizedQuery = query.toLowerCase();
     return this.getInterfaces().filter((item) =>
-      item.path?.toLowerCase().includes(uri.toLowerCase())
+      item.path?.toLowerCase().includes(normalizedQuery)
+    );
+  }
+
+  /**
+   * 根据NEI详情链接搜索接口
+   * @param url NEI接口详情链接
+   * @returns 筛选后的接口列表
+   */
+  getInterfacesByUrl(url: string): RefactoredInterface[] {
+    const parseResult = parseInterfaceDetailUrl(url.trim());
+    if (parseResult.kind !== "match") {
+      return [];
+    }
+
+    return this.getInterfaces().filter(
+      (item) =>
+        item.id === parseResult.query.id &&
+        item.projectId === parseResult.query.projectId
     );
   }
 

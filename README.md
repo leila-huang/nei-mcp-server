@@ -7,7 +7,8 @@
 本项目将 NEI 平台的常用功能封装为一系列 MCP 工具，方便快速查询和集成。支持的工具如下：
 
 - `sync_nei_project`: 强制从远程 NEI 平台同步最新的项目数据，并更新本地缓存。当怀疑本地数据不是最新，或需要获取最近刚刚变更的后端接口、数据模型信息时，应首先调用此工具。
-- `search_interfaces_by_uri`: 根据 URI（接口路径）模糊搜索 NEI 项目中的接口资源。
+- `search_interfaces_by_uri`: 根据接口定义的 URI（接口路径）模糊搜索 NEI 项目中的接口资源。
+- `search_interfaces_by_url`: 根据 NEI 接口详情链接中的 `pid` 和 `id` 精确搜索接口资源，例如 `http://nei.example.com/interface/detail/?pid=10135&id=13015`。
 - `search_interfaces_by_name`: 根据接口名称模糊搜索 NEI 项目中的接口资源。
 - `search_groups_by_name`: 根据分组名称搜索 NEI 项目中的业务分组。
 

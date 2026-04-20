@@ -31,9 +31,9 @@ const main = async () => {
   server.addTool({
     name: "search_interfaces_by_uri",
     description:
-      "通过接口的URI（访问路径）在NEI项目中进行模糊搜索。当你需要查找的接口时优先使用此工具，接口的参数常见为URI、英文。如果搜索结果为空，建议先调用 `sync_nei_project` 工具同步最新数据后再试。",
+      "通过接口定义的URI（访问路径）在NEI项目中进行模糊搜索。此工具只匹配接口path，不处理NEI详情页链接；如果用户提供的是 /interface/detail/?pid=10135&id=13015 或完整详情页URL，应改用 `search_interfaces_by_url`。如果搜索结果为空，建议先调用 `sync_nei_project` 工具同步最新数据后再试。",
     parameters: z.object({
-      uri: z.string().describe("接口URI，支持模糊匹配"),
+      uri: z.string().describe("接口定义的URI，支持按path模糊匹配"),
     }),
     execute: async ({ uri }) => {
       try {
@@ -41,6 +41,25 @@ const main = async () => {
         return JSON.stringify(interfaces, null, 2);
       } catch (error: any) {
         console.error(`[Error] search_interfaces_by_uri: ${error.message}`);
+        return `执行失败: ${error.message}`;
+      }
+    },
+  });
+
+  // 根据NEI详情链接搜索接口
+  server.addTool({
+    name: "search_interfaces_by_url",
+    description:
+      "通过NEI接口详情链接搜索接口信息。适用于用户直接提供形如 http://nei.example.com/interface/detail/?pid=10135&id=13015 的链接；工具只解析链接中的pid和id并精确返回接口详情，不进行URI模糊搜索。如果链接缺少pid/id或pid/id不是正整数，将返回空结果。如果搜索结果为空，建议先调用 `sync_nei_project` 工具同步最新数据后再试。",
+    parameters: z.object({
+      url: z.string().describe("NEI接口详情链接，必须包含正整数pid和id"),
+    }),
+    execute: async ({ url }) => {
+      try {
+        const interfaces = nei.getInterfacesByUrl(url);
+        return JSON.stringify(interfaces, null, 2);
+      } catch (error: any) {
+        console.error(`[Error] search_interfaces_by_url: ${error.message}`);
         return `执行失败: ${error.message}`;
       }
     },
